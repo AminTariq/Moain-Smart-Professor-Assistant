@@ -56,6 +56,12 @@ Professors spend hours every week managing repetitive academic and administrativ
 
 ---
 
+## Public Repository Note
+
+This repository includes a **sanitized version** of the workflow export for public sharing.  
+Sensitive credentials, private IDs, and deployment-specific values were removed before publishing.
+
+---
 ## Achievement
 
 **1st Place Winner** at the **AI Agent Bootcamp** organized by the **Faculty of Computing & Artificial Intelligence — Cairo University**.
@@ -64,7 +70,7 @@ Professors spend hours every week managing repetitive academic and administrativ
 
 ## Team
 
-- **Amin Tariq Amin Abbas** — Team Leader
+- **Amin Tariq Amin Abbas**
 - **Malak Ahmed Saber**
 - **Malak Eltabbakh**
 - **Basma Mamdouh**
