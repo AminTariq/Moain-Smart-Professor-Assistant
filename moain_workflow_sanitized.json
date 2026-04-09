@@ -1,0 +1,2513 @@
+{
+  "name": "MoainWorkflowSanitized",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -2576,
+        2096
+      ],
+      "id": "8d615556-bbb4-4367-9a6f-acd07455a2d4",
+      "name": "Telegram Trigger",
+      "webhookId": "YOUR_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.message.voice.file_id }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists",
+                      "singleValue": true
+                    },
+                    "id": "90346c74-YOUR_GOOGLE_SHEET_ID"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Audio"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "af429baf-95d7-46c9-8e0c-b839840b251c",
+                    "leftValue": "={{ $json.message.text }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Text"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "46824800-YOUR_GOOGLE_SHEET_ID",
+                    "leftValue": "={{ $json.message.photo[0].file_id }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Unadded feature"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -2352,
+        2192
+      ],
+      "id": "cd189e7a-a4ea-4412-b7b8-09e7930a0856",
+      "name": "Voice Or Text"
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "inputType": "binary",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        -1904,
+        2000
+      ],
+      "id": "0ce0178a-5ea9-4a96-b8aa-6bfa5cf7df41",
+      "name": "Speech-to-Text"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Professor's original message for ref: \n{{ $('Merge inputs').item.json.text }}\nRouter's reply: {{ $json.reply }}\nCurrent date: {{ $('Merge inputs').item.json.Date }}\naction: {{ $json.action }}\nday: {{ $json.day }}\ncourse: {{ $json.course }}\ntime: {{ $json.time }}\nid: {{ $json.id }}",
+        "options": {
+          "systemMessage": "You are Moain (معين), a scheduling assistant for a professor.\n\nImportant rules:\n- You manage a weekly class schedule stored in Google Sheets (columns: ID, Day, Time, Subject, Room, Status, Notes).\n- You may use these tools:\n  - Read Row → fetch the full details of a class\n  - Append Row → add a new class\n  - Update Row (Cancel) → cancel a class\n  - Update Row (Schedule) → reschedule or restore a class\n  - Delete Row → remove a class completely\n\nYou will always receive structured fields from the Router AI:\n- action: \"add\", \"cancel\", \"schedule\", or \"delete\"\n- id: lecture ID (if provided)\n- day, time, course\n\nBest Practices:\n- Cancel: update only Status → \"Cancelled\". Optionally add a cancellation reason in Notes. Keep all other fields unchanged.\n- Schedule/Restore: update Day/Time if provided and reset Status → \"Scheduled\".  \n  • If Notes only contains a cancellation reason (e.g., \"Cancelled by professor\"), clear Notes.  \n  • Otherwise, preserve useful Notes (e.g., \"Midterm week\").  \n- Add: First, call Read Row (or Read All) to find the last existing ID.  \n  • Generate a new unique ID as (last ID + 1).  \n  • Then call Append Row with the new ID, all provided fields, and Status=\"Scheduled\".\n- Delete: permanently remove the row (only if explicitly requested).\n\nProcess:\n1. If action = \"cancel\" or \"schedule\", call Read Row once to fetch the current record.  \n2. Then call the appropriate Update Row tool with all fields filled in.  \n3. After the correct tool has been executed successfully, STOP. Do not call any more tools.  \n4. Finally, return only a short, polite confirmation different than the router's reply to the Doctor (professor) (Arabic or English).  \n\n⚠️ Very important:  \n- Do not read the sheet again after a successful update.  \n- Do not loop. One Read → One Update → Then stop.  \n- Only use more than one tool if it is strictly required (e.g., Read before Update).  \n\nYour output after the last tool call must always be just the confirmation message for the professor.\n\n📧 Additional rule for notifying students:\n- Along with the professor’s confirmation reply, always include a `student_email` object in your JSON output.  \n- The `student_email` must contain:  \n  • `subject`: a clear subject line for the email (Arabic or English depending on the professor’s input).  \n  • `body`: a short, polite message to students with the updated schedule details (Day, Time, Course, Room if available).  \n- Example format:\n\n```json\n{\n  \"reply\": \"✅ تم إعادة جدولة محاضرة الشبكات ليوم الخميس الساعة 09:00 صباحًا.\",\n  \"student_email\": {\n    \"subject\": \"تحديث: محاضرة الشبكات\",\n    \"body\": \"أعزائي الطلبة،\\n\\nتم إعادة جدولة محاضرة الشبكات لتصبح يوم الخميس الساعة 09:00 صباحًا في القاعة 302.\\n\\nيرجى الالتزام بالموعد الجديد.\\n\\nشكراً.\"\n  }\n}\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        224,
+        1616
+      ],
+      "id": "YOUR_GOOGLE_SHEET_ID",
+      "name": "Reschedule AI Agent"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Professor: {{ $json.text }}\nCurrent Date: {{ $json.Date }}",
+        "options": {
+          "systemMessage": "You are Moain (معين), a friendly and efficient AI assistant for a professor on Telegram.\n\n### Core Directives:\n\n1.  **JSON Only:** Your entire response MUST be a single JSON object inside a ```json code block. No other text or explanation is allowed outside this block.\n2.  **Tool-First Approach:** Your primary function is to interpret the professor's request and prepare it for your tools. You MUST ALWAYS consult your Google Sheets tool to find missing information before asking for clarification.\n3.  **Role Differentiation:** Your role depends on the intent.\n    *   For action intents (`reschedule`, `send_grades`, `progress_tracking`), you are a **pre-processor**. You prepare the task for execution.\n    *   For the `other` intent, you are an **information retriever**. You find and provide the answer directly.\n\n### Addressing the Professor:\n\n*   **Title:** When communicating in Arabic, always address the professor using the formal title \"دكتور\".\n\n### Tool:\n\n*   You have one tool: a Google Sheet with the professor's schedule.\n*   **Columns:** `ID`, `Day`, `Time`, `Subject`, `Room`, `Status`, `Notes`, `Last Topic`.\n\n---\n\n### Workflow:\n\n### The Golden Rule: Always Check the Sheet\n*   **Mandatory First Step:** On every single request from the professor, your absolute first action is to consult the Google Sheet tool.\n*   **Rationale:** This ensures you are always working with the most current, real-time data. Do this even if the request seems simple or you think you already know the answer. This prevents errors from outdated information.\n\n**1. Analyze the Request:**\n*   Generate a polite `reply` in Arabic or English (same language as the professor).\n*   Set `intent` as one of:\n    *   `\"reschedule\"` → change, cancel, or move a class/meeting.\n    *   `\"send_grades\"` → grades, reports, or dashboards.\n    *   `\"progress_tracking\"` → updates or change on progress, (You must extract id).\n    *   `\"other\"` → asking for information (e.g., time, location, schedule details).\n\n**2. Process `\"reschedule\"` Intent:**\n*   This is your first primary action task. You must extract the following fields.\n*   **`action`**: one of `\"add\"`, `\"cancel\"`, `\"schedule\"`, or `\"delete\"`.\n*   **`id`**: The lecture ID from the sheet (look this up).\n*   **`day`**: The weekday.\n*   **`time`**: The start time (HH:MM, 24h format).\n*   **`course`**: The course name.\n\n**3. Process `\"progress_tracking\"` Intent:**\n*   This is your second primary action task, focused on updating the `Last Topic` reached in a class. You must extract the following fields.\n*   **`id`**: The lecture ID from the sheet (look this up).\n*   **`course`**: The course name.\n*   **`day`**: The weekday (to help identify the correct class).\n\n**4. Handle Missing Information & Ambiguity:**\n*   **Rule A (ALWAYS check the sheet):** If the professor provides a `course` or `day` (e.g., \"Monday Algorithms\"), you MUST look up its `id` and `time` in the sheet yourself.\n*   **Rule B (Clarify Ambiguity):** If a request is vague (\"جدول محاضرة الخوارزميات\") and that `course` already exists in the sheet, set `\"complete\": false`. Your `reply` must ask for clarification, for example: \"عفواً دكتور، هل تقصد إضافة محاضرة جديدة لمادة الخوارزميات، أم تعديل موعد المحاضرة الحالية (ID …, الاثنين 10:00)؟\"\n*   **Rule C (Assume \"add\"):** If a course from a vague request does NOT exist in the sheet, assume `action: \"add\"`.\n*   **Rule D (Ask as a Last Resort):** If you cannot find the required information even after checking the sheet, set `\"complete\": false` and your `reply` must be a clarifying question.\n\n**5. Finalize JSON Output (Intent-Specific Replies):**\n\n*   **A. For `reschedule`, `send_grades`, `progress_tracking` (Action Intents):**\n    *   If all required fields for an action are present, set `\"complete\": true`. The `reply` MUST confirm the task is **in progress**. Use phrases like \"Got it, I’ll handle that now\" or \"تمام، جاري التنفيذ.\" DO NOT use past-tense words like \"cancelled,\" \"done,\" or \"تم.\"\n    *   If you need more information (per Rule B or D), set `\"complete\": false`, and the `reply` must be the clarifying question.\n\n*   **B. For `other` (Information Intent):**\n    *   Set `\"complete\": true`.\n    *   Your job is to find the answer in the sheet and put it directly in the `reply`.\n    *   The `reply` MUST be the **direct answer** to the professor's question. For example: \"The `Last Topic` for your Algorithms lecture is 'Chapter 3'.\" or \"Your AI lecture is on Tuesday at 14:00 in room C101.\"\n    *   **Never** use \"in progress\" phrases for this intent.\n\n---\n\n### Example 1: `reschedule` Intent (Action)\n\n**Professor's Request:** \"Please cancel the Algorithms lecture on Monday.\"\n\n**Your Output:**\n\n    {\n      \"reply\": \"Got it, I’ll cancel the Monday 10:00 Algorithms lecture now.\",\n      \"intent\": \"reschedule\",\n      \"complete\": true,\n      \"action\": \"cancel\",\n      \"id\": \"1\",\n      \"day\": \"Monday\",\n      \"time\": \"10:00\",\n      \"course\": \"Algorithms\"\n    }\n\n### Example 2: `other` Intent (Information)\n\n**Professor's Request:** \"Where is my AI class tomorrow?\" (Assuming tomorrow is Tuesday)\n\n**Your Output:**\n\n    {\n      \"reply\": \"Your Artificial Intelligence class is on Tuesday at 14:00 in room C101.\",\n      \"intent\": \"other\",\n      \"complete\": true\n    }\n\n### Example 3: `progress_tracking` Intent (Action)\n\n**Professor's Request:** \"حدّث تقدم محاضرة الخوارزميات يوم الاثنين إلى الفصل الرابع.\"\n\n**Your Output:**\n\n    {\n      \"reply\": \"تمام دكتور، جاري تحديث تقدم محاضرة الخوارزميات يوم الاثنين الساعة 10:00 إلى الفصل الرابع.\",\n      \"intent\": \"progress_tracking\",\n      \"complete\": true,\n      \"id\": \"1\",\n      \"day\": \"Monday\",\n      \"time\": \"10:00\",\n      \"course\": \"Algorithms\",\n      \n    }"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        -1184,
+        2112
+      ],
+      "id": "YOUR_GOOGLE_SHEET_ID",
+      "name": "Core AI - Router"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Use this tool when the professor asks to cancel a class.\nFind the row by Day of the week, Time, and Subject.\nUpdate Status = \"Cancelled\".\nadd a reason in Notes (e.g., \"Cancelled by professor\").\nDo not delete the row — keep it in the weekly schedule for record-keeping.\nDo not change the room either\nIgnore specific calendar dates.",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "sample_class_schedule",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1477112960,
+          "mode": "list",
+          "cachedResultName": "sample_class_schedule.csv",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": 0,
+            "ID": "={{ $fromAI('ID__using_to_match_', ``, 'string') }}",
+            "Day": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Day', ``, 'string') }}",
+            "Time": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Time', ``, 'string') }}",
+            "Subject": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Subject', ``, 'string') }}",
+            "Room": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Room', ``, 'string') }}",
+            "Status": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Status', ``, 'string') }}",
+            "Notes": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Notes', ``, 'string') }}"
+          },
+          "matchingColumns": [
+            "ID"
+          ],
+          "schema": [
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Day",
+              "displayName": "Day",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Time",
+              "displayName": "Time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Subject",
+              "displayName": "Subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Room",
+              "displayName": "Room",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        160,
+        1840
+      ],
+      "id": "f5d9c882-YOUR_GOOGLE_SHEET_ID",
+      "name": "Cancel Class"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Use this tool when the professor asks to add a completely new class and not to reschedule!\nAdd a new row with the given Day of the week, Time, Subject, and Room (if provided).\nAlways set Status = \"Scheduled\".\nIgnore calendar dates — treat the schedule as repeating weekly.",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "sample_class_schedule",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1477112960,
+          "mode": "list",
+          "cachedResultName": "sample_class_schedule.csv",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ID": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('ID', ``, 'string') }}",
+            "Day": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Day', ``, 'string') }}",
+            "Time": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Time', ``, 'string') }}",
+            "Subject": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Subject', ``, 'string') }}",
+            "Room": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Room', ``, 'string') }}",
+            "Status": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Status', ``, 'string') }}",
+            "Notes": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Notes', ``, 'string') }}"
+          },
+          "matchingColumns": [
+            "ID"
+          ],
+          "schema": [
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Day",
+              "displayName": "Day",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Time",
+              "displayName": "Time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Subject",
+              "displayName": "Subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Room",
+              "displayName": "Room",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        288,
+        1840
+      ],
+      "id": "26e0f54f-65ac-48a1-9b4c-36467d3fcf89",
+      "name": "Add Class"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Use this tool when the professor asks to move or reschedule a class or return it to its original state or edit it.\nFind the row by Day of the week, Time, and Subject.\nUpdate the Day and Time to the new values.\nAlways reset Status = \"Scheduled\" (even if it was previously \"Cancelled\").\nKeep the same Subject unless otherwise specified.\nUpdate Notes if context is provided.\nDo not consider actual dates — only weekly day/time.",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "sample_class_schedule",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1477112960,
+          "mode": "list",
+          "cachedResultName": "sample_class_schedule.csv",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": 0,
+            "ID": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('ID__using_to_match_', ``, 'string') }}",
+            "Day": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Day', ``, 'string') }}",
+            "Time": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Time', ``, 'string') }}",
+            "Subject": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Subject', ``, 'string') }}",
+            "Room": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Room', ``, 'string') }}",
+            "Status": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Status', ``, 'string') }}",
+            "Notes": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Notes', ``, 'string') }}"
+          },
+          "matchingColumns": [
+            "ID"
+          ],
+          "schema": [
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Day",
+              "displayName": "Day",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Time",
+              "displayName": "Time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Subject",
+              "displayName": "Subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Room",
+              "displayName": "Room",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        416,
+        1840
+      ],
+      "id": "32807187-4e5c-44e9-a55b-2a7a012875b8",
+      "name": "Reschedule"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Use this tool when the professor explicitly asks to permanently remove a class from the weekly schedule.\nFind the row by Day of the week, Time, and Subject.\nDelete the row entirely.\nOnly use this if the professor clearly says \"remove\" or \"delete\" — otherwise prefer Cancel.",
+        "operation": "remove",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "sample_class_schedule",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1477112960,
+          "mode": "list",
+          "cachedResultName": "sample_class_schedule.csv",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        }
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        544,
+        1840
+      ],
+      "id": "a1572bf4-66c3-4449-8bf1-bb4348758e9d",
+      "name": "Delete Class"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Use this tool to look up lecture details in the weekly schedule. You can search the sheet by: - Day of the week (e.g., \"Monday\") - Course name (e.g., \"Algorithms\") - ID if provided The sheet has these columns: ID, Day, Time, Subject, Room, Status, Notes, Last Topic.\nPurpose: - If the professor’s request is incomplete (e.g., missing time), use this tool to find the matching row and fill in the missing fields (time, id, etc.). - Always treat the schedule as weekly — ignore specific calendar dates. - If multiple matches are found (e.g., two classes with same subject), ask the professor for clarification instead of guessing.\nUse it for rescheduling and progress tracking and any inquiry.",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "sample_class_schedule",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1477112960,
+          "mode": "list",
+          "cachedResultName": "sample_class_schedule.csv",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        -976,
+        2336
+      ],
+      "id": "3fd750e5-2b51-401e-a124-55688c97be47",
+      "name": "Read sheet"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ $json.reply }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -336,
+        1888
+      ],
+      "id": "7d34b63a-d5d8-4695-8492-d6b21de4b235",
+      "name": "Send a progress message",
+      "webhookId": "YOUR_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ $json.reply }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -320,
+        2272
+      ],
+      "id": "c1b47679-2c5a-4370-9f60-7bf4e5024f5f",
+      "name": "Ask for further confirmation",
+      "webhookId": "YOUR_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "reschedule",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "6f589352-YOUR_GOOGLE_SHEET_ID"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "reschedule"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c2efa78b-d959-424e-9f3d-bb496affc9be",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "send_grades",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "send_grades"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "59575bbe-caf4-4cf7-bf52-29aedca89488",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "progress_tracking",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "progress_tracking"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -304,
+        2080
+      ],
+      "id": "0e3fac5d-acda-43eb-a8ac-201879e623b3",
+      "name": "Router"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "584745bd-4452-4ff0-9069-83c923bd4d20",
+              "leftValue": "={{ $json.complete }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            },
+            {
+              "id": "f14d8bd7-2c6a-4e47-969b-a47148aedb44",
+              "leftValue": "={{ $json.intent }}",
+              "rightValue": "other",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -544,
+        2112
+      ],
+      "id": "889fca24-9ed0-4726-8b83-23a7febf2d52",
+      "name": "If more confirmation is needed"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "43af0b0a-a95d-4239-934f-259925a82928",
+              "name": "reply",
+              "value": "={{ JSON.parse($json[\"output\"].replace(/```json|```/g, \"\"))[\"reply\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "220bcdcd-6f63-43fc-92b8-195913a5d293",
+              "name": "intent",
+              "value": "={{ JSON.parse($json[\"output\"].replace(/```json|```/g, \"\"))[\"intent\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "f5a428e1-9bfc-4a04-b7c9-e17f14b4cef0",
+              "name": "complete",
+              "value": "={{ JSON.parse($json[\"output\"].replace(/```json|```/g, \"\"))[\"complete\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "d40073a8-08be-4082-ad43-61737f65590f",
+              "name": "action",
+              "value": "={{ JSON.parse($json[\"output\"].replace(/```json|```/g, \"\"))[\"action\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "2e7e18a6-3565-46ff-8930-457598ac9eb7",
+              "name": "day",
+              "value": "={{ JSON.parse($json[\"output\"].replace(/```json|```/g, \"\"))[\"day\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "08d2ab1b-baa5-4251-b4a0-102f7a0d3d3e",
+              "name": "time",
+              "value": "={{ JSON.parse($json[\"output\"].replace(/```json|```/g, \"\"))[\"time\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "d0998d04-5a92-4d9f-a132-a9a212196e81",
+              "name": "course",
+              "value": "={{ JSON.parse($json[\"output\"].replace(/```json|```/g, \"\"))[\"course\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "YOUR_GOOGLE_SHEET_ID",
+              "name": "id",
+              "value": "={{ JSON.parse($json[\"output\"].replace(/```json|```/g, \"\"))[\"id\"] }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -768,
+        2112
+      ],
+      "id": "YOUR_GOOGLE_SHEET_ID",
+      "name": "Parsing"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c7f3c30c-7064-4597-a87e-b5452afd9400",
+              "name": "text",
+              "value": "={{ $('Telegram Trigger').item.json.message.text }}",
+              "type": "string"
+            },
+            {
+              "id": "bdb82030-dd06-45e2-b49b-6c9beb49beea",
+              "name": "Chat ID",
+              "value": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+              "type": "string"
+            },
+            {
+              "id": "da539a4f-38ff-4d88-aac7-d93a5f000fd9",
+              "name": "Date",
+              "value": "={{ new Date($('Telegram Trigger').item.json.message.date * 1000).toLocaleString(\"en-US\", { timeZone: \"Africa/Cairo\" }) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1680,
+        2208
+      ],
+      "id": "aa3d7297-9bf2-44a4-a16a-b472f5217323",
+      "name": "Text parsing"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9acb1702-e0d7-4161-ac59-7d5e5524a313",
+              "name": "Error",
+              "value": "We will add the feature to read these in the future versions",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -2128,
+        2336
+      ],
+      "id": "4c5c7e52-b75e-4e61-8a1e-8ad532d2cfbb",
+      "name": "Unadded feature"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4cd731c5-d321-4202-9c39-4952b488bf5a",
+              "name": "Chat ID",
+              "value": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+              "type": "string"
+            },
+            {
+              "id": "f84eda21-YOUR_GOOGLE_SHEET_ID",
+              "name": "text",
+              "value": "={{ $json.content.parts[0].text }}",
+              "type": "string"
+            },
+            {
+              "id": "3f6d6c60-b7d3-4854-87d8-a6bf8cd1737a",
+              "name": "Date",
+              "value": "={{ new Date($('Telegram Trigger').item.json.message.date * 1000).toLocaleString(\"en-US\", { timeZone: \"Africa/Cairo\" }) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1680,
+        2000
+      ],
+      "id": "cd7c7873-fe54-4113-b844-e022bed1f5bb",
+      "name": "Voice parsing"
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $json.message.voice.file_id }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -2128,
+        2000
+      ],
+      "id": "07fd7978-3211-4324-b52d-641ec57616ad",
+      "name": "Download voice note",
+      "webhookId": "YOUR_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -96,
+        1840
+      ],
+      "id": "38fa089d-4582-4025-8a92-d9db27ad6250",
+      "name": "Rescheduler AI"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -1232,
+        2336
+      ],
+      "id": "6f264c46-078f-46eb-8fd5-09cc85551ad5",
+      "name": "Router AI"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Telegram Trigger').item.json.message.chat.id }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        32,
+        1840
+      ],
+      "id": "c857b36e-318a-45e1-a5e1-2741cd70f3e6",
+      "name": "Context"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ $json.reply }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1104,
+        1632
+      ],
+      "id": "6e2e889e-2b0e-4bc4-9891-d92282a9fcfb",
+      "name": "Notifying the professor",
+      "webhookId": "YOUR_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "content": "📝 Parsing the text and turning speech into text  \nfor the AI to understand",
+        "height": 96
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2128,
+        1872
+      ],
+      "typeVersion": 1,
+      "id": "d90b1af8-YOUR_GOOGLE_SHEET_ID",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "Router AI\nIt detects the doctor's intent and sends out a message of progress",
+        "height": 112,
+        "width": 256
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1200,
+        1968
+      ],
+      "typeVersion": 1,
+      "id": "6bac8997-788d-48e2-9546-bc879f5b16d6",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fad35f7b-c64b-45c2-ad41-3993edd8c21f",
+              "name": "reply",
+              "value": "={{ JSON.parse($json[\"output\"].replace(/```json|```/g, \"\"))[\"reply\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "e12a50c6-3468-4e2f-8750-ea46c2d6bc46",
+              "name": "subject",
+              "value": "={{ JSON.parse($json[\"output\"].replace(/```json|```/g, \"\"))[\"student_email\"][\"subject\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "398217cd-8af7-4870-a5b3-1af4081cf806",
+              "name": "body",
+              "value": "={{ JSON.parse($json[\"output\"].replace(/```json|```/g, \"\"))[\"student_email\"][\"body\"] }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        1632
+      ],
+      "id": "512bf9af-2940-4acc-81ae-5188b70da003",
+      "name": "Parsing Notifications"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Use this tool to fetch the full details of a class (all fields) before updating. \nAlways call this tool if you need to change only part of a row, so you don’t lose Room or Notes.\n",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "sample_class_schedule",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1477112960,
+          "mode": "list",
+          "cachedResultName": "sample_class_schedule.csv",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        672,
+        1840
+      ],
+      "id": "ea92dd61-d54f-462b-a3fc-8d1a247a9309",
+      "name": "Read sheet 2"
+    },
+    {
+      "parameters": {
+        "content": "Reschedule AI Agent, it understands the doctor's intent, whether its to delete or cancel a class or postpone and then notify students and update it on the sheet",
+        "height": 112,
+        "width": 272,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        208,
+        1488
+      ],
+      "typeVersion": 1,
+      "id": "6af77b02-8ca1-4842-ac12-d278971c3243",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ $json.Error }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -1904,
+        2336
+      ],
+      "id": "b5882291-652b-4cc7-a751-624f32667913",
+      "name": "Send a text message",
+      "webhookId": "YOUR_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "content": "Can send emails to multiple students but for the demo will only send to one person (student representative)",
+        "height": 112,
+        "width": 224,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1296,
+        1488
+      ],
+      "typeVersion": 1,
+      "id": "7cdd1dbf-24f4-4d5c-9cee-443922953da8",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Telegram Trigger').item.json.message.chat.id }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        224,
+        2672
+      ],
+      "id": "YOUR_GOOGLE_SHEET_ID",
+      "name": "Simple Memory1"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "contextWindowLength": 10
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        -1104,
+        2336
+      ],
+      "id": "b0989c9e-dd0f-4926-a24f-00d3481ca9d0",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Use this tool to fetch the full details of a class (all fields) before updating. \nAlways call this tool if you need to change only part of a row, so you don’t lose Room or Notes.\n",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "sample_class_schedule",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1477112960,
+          "mode": "list",
+          "cachedResultName": "sample_class_schedule.csv",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        352,
+        2672
+      ],
+      "id": "ff3d392b-f7f1-48df-b5e3-e7345d8a8f2c",
+      "name": "Read progress1"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "### Append Row (Progress Update)\nUse this tool when the professor provides a new lecture progress update.  \n- Add a new row into the **Progress Log** Google Sheet.  \n- Required columns:  \n  - **ID** → the lecture ID from the main schedule (if identifiable). If not available, set to null.  \n  - **Date** → YYYY-MM-DD (use today’s date if professor didn’t provide one).  \n  - **Subject** → the course name (normalize if typoed).  \n  - **Last Topic** → short description of what was covered in this lecture (e.g., \"finished Chapter 2\", \"explained Quick Sort\").  \n  - **Note** → optional extra details (e.g., \"class was shortened\", \"midterm week\"). If no extra context, set to null.  \n- ⚠️ Important:  \n  • Do not overwrite existing rows.  \n  • Do not insert blank/placeholder values.  \n  • Always add a new row with only valid values. ",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "sample_class_schedule",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1477112960,
+          "mode": "list",
+          "cachedResultName": "sample_class_schedule.csv",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Day": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Day', ``, 'string') }}",
+            "Time": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Time', ``, 'string') }}",
+            "Subject": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Subject', ``, 'string') }}",
+            "Room": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Room', ``, 'string') }}",
+            "Status": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Status', ``, 'string') }}",
+            "Notes": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Notes', ``, 'string') }}",
+            "ID": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('ID__using_to_match_', ``, 'string') }}",
+            "Last Topic": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Last_Topic', ``, 'string') }}"
+          },
+          "matchingColumns": [
+            "ID"
+          ],
+          "schema": [
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Day",
+              "displayName": "Day",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Time",
+              "displayName": "Time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Subject",
+              "displayName": "Subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Room",
+              "displayName": "Room",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Last Topic",
+              "displayName": "Last Topic",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        480,
+        2672
+      ],
+      "id": "2d4b0158-ff0f-49d4-9b77-95d9e10240a5",
+      "name": "Update progress"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fad35f7b-c64b-45c2-ad41-3993edd8c21f",
+              "name": "reply",
+              "value": "={{ JSON.parse($json[\"output\"].replace(/```json|```/g, \"\"))[\"reply\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "e12a50c6-3468-4e2f-8750-ea46c2d6bc46",
+              "name": "subject",
+              "value": "={{ JSON.parse($json[\"output\"].replace(/```json|```/g, \"\"))[\"student_email\"][\"subject\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "398217cd-8af7-4870-a5b3-1af4081cf806",
+              "name": "body",
+              "value": "={{ JSON.parse($json[\"output\"].replace(/```json|```/g, \"\"))[\"student_email\"][\"body\"] }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        2448
+      ],
+      "id": "578b8401-be86-4008-88c2-5b5bd2b39816",
+      "name": "Parsing Notifications1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Professor's original message for ref: \n{{ $('Merge inputs').item.json.text }}\nRouter's reply: {{ $json.reply }}\nCurrent date: {{ $('Merge inputs').item.json.Date }}\naction: {{ $json.action }}\nday: {{ $json.day }}\ncourse: {{ $json.course }}\ntime: {{ $json.time }}\nid: {{ $json.id }}",
+        "options": {
+          "systemMessage": "You are Moain (معين), a progress-tracking assistant for a professor.\n\nImportant rules:\n- You manage lecture progress stored in the same weekly schedule sheet.  \n- The sheet has these columns: ID, Day, Time, Subject, Room, Status, Notes, Last Topic.  \n\nYou may use these tools:\n- Read Row → fetch the full details of a class by ID or Subject  \n- Update Row (Progress) → update the Last Topic (and optionally Notes) for a class  \n- Append Row (Optional) → if explicitly asked to log a completely new record  \n\nYou will receive the professor’s raw message (in Arabic or English).  \nYou must FIRST decide if the professor is:\n- Giving a progress update (e.g., \"I explained Quick Sort in Algorithms\") → request = \"update\"\n- Asking about their last progress (e.g., \"Where did I stop in Data Structures?\") → request = \"retrieval\"\n\nThen extract these fields:\n- request: \"update\" or \"retrieval\"\n- id: lecture ID (if provided or resolved from the schedule)\n- date: lecture date (if provided, else today for updates)\n- subject: subject name (normalized if typoed)\n- last topic: short description of the lecture content covered (for updates or retrieval results)\n- note: optional context (midterm, cancellation, etc.)\n\nBest Practices:\n- Update:  \n  1. Call Read Row to fetch the current full record (all fields: Day, Time, Subject, Room, Status, Notes, Last Topic).  \n  2. Call Update Row (Progress) with the entire row, only changing `Last Topic` (and `Notes` if provided).  \n  3. Preserve Day, Time, Subject, Room, Status, and Notes (unless Notes is explicitly updated).  \n- Retrieval:  \n  • Use Read Row to fetch the record by ID/Subject and return the most recent Last Topic.  \n  • If subject/id missing, ask the professor to clarify.  \n  • If none found, return nulls.  \n\nProcess:\n1. Detect whether professor’s message is an \"update\" or \"retrieval\".  \n2. If update → Read Row once → Update Row (Progress) once.  \n3. If retrieval → Read Row once.  \n4. After the tool call completes successfully, STOP. Do not call more tools.  \n5. Finally, return a short, polite confirmation different from the Router’s reply to the Doctor (professor) (Arabic or English).  \n\n⚠️ Very important:\n- Do not overwrite or delete Room, Status, or Notes.  \n- Only update Last Topic (and optionally Notes if professor gave new context).  \n- Do not loop. One Read → One Update → Then stop.  \n- Router’s reply = acknowledgment (\"جاري التنفيذ\").  \n- Your reply = final confirmation (e.g., \"✅ تم تسجيل التقدم\", or \"📖 توقفت آخر مرة عند…\").  \n- Always include both the natural reply and the structured fields in JSON.  \n\nYour output after the last tool call must always be strictly JSON inside a ```json``` block, for example:\n\n```json\n{\n  \"reply\": \"✅ Progress recorded: Algorithms lecture updated with 'Quick Sort'.\",\n  \"request\": \"update\",\n  \"id\": \"1\",\n  \"date\": \"2025-09-17\",\n  \"subject\": \"Algorithms\",\n  \"last_topic\": \"Quick Sort\",\n  \"note\": null\n}\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        224,
+        2448
+      ],
+      "id": "fe88502b-YOUR_GOOGLE_SHEET_ID",
+      "name": "Progress Tracker AI Agent"
+    },
+    {
+      "parameters": {
+        "content": "Progress tracker AI Agent, it records the doctor's last taught topic after a simple voice note or a message and saves it on the sheet",
+        "height": 96,
+        "width": 336,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        192,
+        2336
+      ],
+      "typeVersion": 1,
+      "id": "25482a15-0534-43c2-9504-610c7219d7bf",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1552,
+        2112
+      ],
+      "id": "29df20da-cdf6-4474-8649-afdcf718521b",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Grades",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        288,
+        2112
+      ],
+      "id": "89a642cf-caa1-4310-a8a7-3a2f36186028",
+      "name": "Get Grades in sheet"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = items.map(item => item.json);\n\n// Counters\nlet count = 0;\nlet sumMidterm = 0, sumLab = 0;\nlet sumQ1 = 0, sumQ2 = 0, sumQ3 = 0, sumQ4 = 0, sumBonus = 0;\nlet sumQuizzes = 0, sumTotal = 0;\nlet missingBonusCount = 0;\n\nconst totals = []; // لتجهيز normal distribution\n\nrows.forEach(row => {\n  const mid = parseFloat(row[\"Midterm Grade( 21)\"]);\n  const lab = parseFloat(row[\"Lab Exam(4)\"]);\n  const q1 = parseFloat(row[\"QUIZ 1(5)\"]);\n  const q2 = parseFloat(row[\"QUIZ 2(5)\"]);\n  const q3 = parseFloat(row[\"QUIZ 3(5)\"]);\n  const q4 = parseFloat(row[\"QUIZ 4(5)\"]);\n  const bonus = parseFloat(row[\"BONUS QUIZ ( UP TO 5)\"]);\n  const quizzesTotal = parseFloat(row[\"QUIZZES TOTAL(20)\"]);\n  const total = parseFloat(row[\"Total 40\"]);\n\n  // لو فيه بيانات صالحة\n  if (!isNaN(total)) {\n    count++;\n    if (!isNaN(mid)) sumMidterm += mid;\n    if (!isNaN(lab)) sumLab += lab;\n    if (!isNaN(q1)) sumQ1 += q1;\n    if (!isNaN(q2)) sumQ2 += q2;\n    if (!isNaN(q3)) sumQ3 += q3;\n    if (!isNaN(q4)) sumQ4 += q4;\n\n    if (!isNaN(bonus)) {\n      sumBonus += bonus;\n    } else {\n      missingBonusCount++;\n    }\n\n    if (!isNaN(quizzesTotal)) sumQuizzes += quizzesTotal;\n    sumTotal += total;\n    totals.push(total);\n  }\n});\n\n// Averages\nconst averages = {\n  averageMidterm: sumMidterm / count,\n  averageLab: sumLab / count,\n  averageQ1: sumQ1 / count,\n  averageQ2: sumQ2 / count,\n  averageQ3: sumQ3 / count,\n  averageQ4: sumQ4 / count,\n  averageBonus: sumBonus / (count - missingBonusCount || 1),\n  averageTotalQuizzes: sumQuizzes / count,\n  averageTotal: sumTotal / count\n};\n\n// Normal Distribution (Mean + StdDev + Z-Scores)\nconst mean = averages.averageTotal;\nconst variance = totals.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / (count || 1);\nconst stdDev = Math.sqrt(variance);\n\nconst normalDist = totals.map(val => {\n  return {\n    studentTotal: val,\n    zScore: (val - mean) / (stdDev || 1)\n  };\n});\n\n// Output\nreturn [\n  {\n    json: {\n      totalStudents: count,\n      averages,\n      missingBonusCount,\n      stdDev,\n      normalDistribution: normalDist\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        2112
+      ],
+      "id": "e8fb0c30-7516-4466-bc91-188cf25a7555",
+      "name": "Process KPIs"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Assuming your processed data is in items[0].json\nconst data = items[0].json;\n\nreturn [{\n  json: {\n    totalStudents: data.totalStudents,\n    averageMidterm: $input.first().json.averages.averageMidterm,\n    averageLab: $input.first().json.averages.averageLab,\n    averageQ1: $input.first().json.averages.averageQ1,\n    averageQ2: $input.first().json.averages.averageQ2,\n    averageQ3: $input.first().json.averages.averageQ3,\n    averageQ4: $input.first().json.averages.averageQ4,\n    averageBonus: $input.first().json.averages.averageBonus,\n    averageTotalQuizzes: $input.first().json.averages.averageTotalQuizzes,\n    averageTotal: $input.first().json.averages.averageTotal,\n    missingBonusCount: data.missingBonusCount,\n    stdDev: data.stdDev\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        2016
+      ],
+      "id": "de1b2c02-d8da-40ce-972e-eb1a64eb484c",
+      "name": "Get Summary KPIs",
+      "alwaysOutputData": false,
+      "executeOnce": false,
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fixed code - use items array, not $input.first()\nconst normalDist = items[0].json.normalDistribution;\nreturn normalDist.map((student, index) => ({\n  json: {\n    Index: index + 1,\n    Total: student.studentTotal,    // Use current student, not [0]\n    zScore: student.zScore          // Use current student, not [0]\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        2208
+      ],
+      "id": "ba7ce0fd-YOUR_GOOGLE_SHEET_ID",
+      "name": "Get Students for Normal Distribution"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Grades",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1061073386,
+          "mode": "list",
+          "cachedResultName": "Summary_Results",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "totalStudents": "={{ $json.totalStudents }}",
+            "stdDev": "={{ $json.stdDev }}",
+            "missingBonusCount": "={{ $json.missingBonusCount }}",
+            "averageMidterm": "={{ $json.averageMidterm }}",
+            "averageLab": "={{ $json.averageLab }}",
+            "averageQ1": "={{ $json.averageQ1 }}",
+            "averageQ2": "={{ $json.averageQ2 }}",
+            "averageQ3": "={{ $json.averageQ3 }}",
+            "averageQ4": "={{ $json.averageQ4 }}",
+            "averageBonus": "={{ $json.averageBonus }}",
+            "averageTotalQuizzes": "={{ $json.averageTotalQuizzes }}",
+            "averageTotal": "={{ $json.averageTotal }}"
+          },
+          "matchingColumns": [
+            "totalStudents"
+          ],
+          "schema": [
+            {
+              "id": "totalStudents",
+              "displayName": "totalStudents",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "averageMidterm",
+              "displayName": "averageMidterm",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "averageLab",
+              "displayName": "averageLab",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "averageQ1",
+              "displayName": "averageQ1",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "averageQ2",
+              "displayName": "averageQ2",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "averageQ3",
+              "displayName": "averageQ3",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "averageQ4",
+              "displayName": "averageQ4",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "averageBonus",
+              "displayName": "averageBonus",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "averageTotalQuizzes",
+              "displayName": "averageTotalQuizzes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "averageTotal",
+              "displayName": "averageTotal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "missingBonusCount",
+              "displayName": "missingBonusCount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "stdDev",
+              "displayName": "stdDev",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1328,
+        2016
+      ],
+      "id": "cd8bdfe7-09bb-4b83-be83-ec18dcd1c4ba",
+      "name": "Add to Summary sheet"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Grades",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1193867422,
+          "mode": "list",
+          "cachedResultName": "NormalDist_Results",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Index": "={{ $json.Index }}",
+            "studentTotal": "={{ $json.Total }}",
+            "zScore": "={{ $json.zScore }}"
+          },
+          "matchingColumns": [
+            "Index"
+          ],
+          "schema": [
+            {
+              "id": "Index",
+              "displayName": "Index",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "studentTotal",
+              "displayName": "studentTotal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "zScore",
+              "displayName": "zScore",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1328,
+        2208
+      ],
+      "id": "61b15566-ad91-4f7d-93e6-4abc18d53d69",
+      "name": "Add to Details sheet"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        1776,
+        2112
+      ],
+      "id": "e393a17e-b0e1-40cd-b24d-46c1c998fefe",
+      "name": "Aggregate"
+    },
+    {
+      "parameters": {
+        "content": "Aggregate all 188 inputs to 1 so we send just 1 email",
+        "height": 96,
+        "width": 208,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1536,
+        1984
+      ],
+      "typeVersion": 1,
+      "id": "4e9c53c8-f5c4-4fb7-953f-01b5a86fd463",
+      "name": "Sticky Note5"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').first().json.message.chat.id }}\n",
+        "text": "=.تم ارسال الدرجات الى الايميل يادكتور✅",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2224,
+        2112
+      ],
+      "id": "d644fd6b-4d53-4cb5-b78d-1bad23999420",
+      "name": "Notifying the professor2",
+      "webhookId": "YOUR_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "content": "Getting grades from the sheet and performing calculations",
+        "height": 80,
+        "width": 192,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        448,
+        2032
+      ],
+      "typeVersion": 1,
+      "id": "374a5a82-89e0-49a8-93f6-eaa279da8b9f",
+      "name": "Sticky Note6"
+    },
+    {
+      "parameters": {
+        "content": "Saving versions for the schedule after each schedule update and uploads it to AWS S3",
+        "height": 128,
+        "width": 192,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1536,
+        1792
+      ],
+      "typeVersion": 1,
+      "id": "a5d9ee35-57e6-40be-baf1-b7a017f55155",
+      "name": "Sticky Note7"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "sample_class_schedule",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1477112960,
+          "mode": "list",
+          "cachedResultName": "sample_class_schedule.csv",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        880,
+        1824
+      ],
+      "id": "aa275904-3dcd-4297-af7f-18fd29222d8c",
+      "name": "Read sheet after edit",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        1104,
+        1824
+      ],
+      "id": "8935ecd1-283c-4423-8abf-1279f4c95c96",
+      "name": "JSON TO CSV"
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "schedule-version",
+        "fileName": "=schedule_{{ new Date().toLocaleString(\"sv-SE\", { timeZone: \"Africa/Cairo\" }).replace(/[ :]/g,\"-\") }}.csv\n",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [
+        1328,
+        1824
+      ],
+      "id": "e06f4f81-9f39-4c5c-935a-b4a8eda3bbb6",
+      "name": "Saving to AWS"
+    },
+    {
+      "parameters": {
+        "sendTo": "your-email@example.com",
+        "subject": "={{ $('Parsing Notifications').item.json.subject }}",
+        "message": "=<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"utf-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>Important notice!</title>\n    <style>\n      body { margin:0; padding:0; background:#f8fafc; font-family: Arial, sans-serif; }\n      .container { max-width:600px; margin:40px auto; background:#ffffff; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.08); overflow:hidden; }\n      .header { background:#2563eb; color:#ffffff; text-align:center; padding:20px; font-size:20px; font-weight:bold; }\n      .content { padding:24px; font-size:15px; color:#1e293b; line-height:1.6; }\n      .content p { margin:12px 0; }\n      .footer { background:#f1f5f9; padding:16px; text-align:center; font-size:13px; color:#64748b; }\n    </style>\n  </head>\n  <body>\n    <div class=\"container\">\n      <div class=\"header\">Important notice!</div>\n      <div class=\"content\">\n        <p>{{ $('Parsing Notifications').item.json.body }}</p>\n      </div>\n      <div class=\"footer\">\n        &copy; FCAI.\n      </div>\n    </div>\n  </body>\n</html>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1328,
+        1632
+      ],
+      "id": "e760c7e1-8e24-41cb-b141-5ad1058b03de",
+      "name": "Notifying Students",
+      "webhookId": "YOUR_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "sendTo": "your-email@example.com",
+        "subject": "Updated Grades Notification",
+        "message": "=<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"utf-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>Grades Dashboard Update</title>\n    <style>\n      body { margin:0; padding:0; background:#f8fafc; font-family: Arial, sans-serif; }\n      .container { max-width:600px; margin:40px auto; background:#ffffff; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.08); overflow:hidden; }\n      .header { background:#2563eb; color:#ffffff; text-align:center; padding:20px; font-size:20px; font-weight:bold; }\n      .content { padding:24px; font-size:15px; color:#1e293b; line-height:1.6; }\n      .content p { margin:12px 0; }\n      .content a { color:#2563eb; font-weight:bold; text-decoration:none; }\n      .content a:hover { text-decoration:underline; }\n      .footer { background:#f1f5f9; padding:16px; text-align:center; font-size:13px; color:#64748b; }\n    </style>\n  </head>\n  <body>\n    <div class=\"container\">\n      <div class=\"header\">Grades Dashboard Update</div>\n      <div class=\"content\">\n        <p>Hello dear doctor,</p>\n\n        <p>The grades dashboard has been updated with the latest data.</p>\n\n        <p>📊 <a href=\"https://lookerstudio.google.com/reporting/c71b1110-4272-4450-9752-d47c41307450/page/yyy?refresh=true\" target=\"_blank\">View the Dashboard</a></p>\n\n        <p>Best regards,<br>\n        Moain</p>\n      </div>\n      <div class=\"footer\">\n        &copy; FCAI.\n      </div>\n    </div>\n  </body>\n</html>\n",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2000,
+        2112
+      ],
+      "id": "a0b463c4-d458-4310-90a4-2efa8bb33857",
+      "name": "Dashboard mail",
+      "webhookId": "YOUR_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ $json.reply }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1104,
+        2448
+      ],
+      "id": "36ba23ab-YOUR_GOOGLE_SHEET_ID",
+      "name": "Notifying the professor3",
+      "webhookId": "YOUR_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "operation": "sendChatAction",
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}"
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -176,
+        1616
+      ],
+      "id": "5ba843c5-ba31-443d-a5c5-2510b18062e9",
+      "name": "Progress",
+      "webhookId": "YOUR_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "operation": "sendChatAction",
+        "chatId": "={{ $json.message.chat.id }}"
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -2352,
+        2000
+      ],
+      "id": "0ac9e592-83f1-4840-b1f9-a5e8a5a57f04",
+      "name": "Typing",
+      "webhookId": "YOUR_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "content": "Indicating progress",
+        "height": 80,
+        "width": 160
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -224,
+        1504
+      ],
+      "typeVersion": 1,
+      "id": "693783db-b913-45a3-a3df-7647b3a77bef",
+      "name": "Sticky Note8"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        96,
+        2672
+      ],
+      "id": "46a859b4-c58f-4d5c-ac9d-dd9f8c4840ef",
+      "name": "Tracker AI"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -1456,
+        2112
+      ],
+      "id": "f5f8d0ae-ae36-4671-b57a-249c8ab676ee",
+      "name": "Merge inputs"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Voice Or Text",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Typing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Voice Or Text": {
+      "main": [
+        [
+          {
+            "node": "Download voice note",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Text parsing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unadded feature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Speech-to-Text": {
+      "main": [
+        [
+          {
+            "node": "Voice parsing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reschedule AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Parsing Notifications",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read sheet after edit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Core AI - Router": {
+      "main": [
+        [
+          {
+            "node": "Parsing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cancel Class": {
+      "ai_tool": [
+        [
+          {
+            "node": "Reschedule AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Class": {
+      "ai_tool": [
+        [
+          {
+            "node": "Reschedule AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reschedule": {
+      "ai_tool": [
+        [
+          {
+            "node": "Reschedule AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Class": {
+      "ai_tool": [
+        [
+          {
+            "node": "Reschedule AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read sheet": {
+      "ai_tool": [
+        [
+          {
+            "node": "Core AI - Router",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Router": {
+      "main": [
+        [
+          {
+            "node": "Reschedule AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Grades in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Progress Tracker AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If more confirmation is needed": {
+      "main": [
+        [
+          {
+            "node": "Router",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send a progress message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ask for further confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsing": {
+      "main": [
+        [
+          {
+            "node": "If more confirmation is needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text parsing": {
+      "main": [
+        [
+          {
+            "node": "Merge inputs",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Unadded feature": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Voice parsing": {
+      "main": [
+        [
+          {
+            "node": "Merge inputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download voice note": {
+      "main": [
+        [
+          {
+            "node": "Speech-to-Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rescheduler AI": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Reschedule AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Router AI": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Core AI - Router",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Context": {
+      "ai_memory": [
+        [
+          {
+            "node": "Reschedule AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notifying the professor": {
+      "main": [
+        [
+          {
+            "node": "Notifying Students",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsing Notifications": {
+      "main": [
+        [
+          {
+            "node": "Notifying the professor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read sheet 2": {
+      "ai_tool": [
+        [
+          {
+            "node": "Reschedule AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory1": {
+      "ai_memory": [
+        [
+          {
+            "node": "Progress Tracker AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Core AI - Router",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read progress1": {
+      "ai_tool": [
+        [
+          {
+            "node": "Progress Tracker AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update progress": {
+      "ai_tool": [
+        [
+          {
+            "node": "Progress Tracker AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsing Notifications1": {
+      "main": [
+        [
+          {
+            "node": "Notifying the professor3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Progress Tracker AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Parsing Notifications1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Grades in sheet": {
+      "main": [
+        [
+          {
+            "node": "Process KPIs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process KPIs": {
+      "main": [
+        [
+          {
+            "node": "Get Summary KPIs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Students for Normal Distribution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Summary KPIs": {
+      "main": [
+        [
+          {
+            "node": "Add to Summary sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Students for Normal Distribution": {
+      "main": [
+        [
+          {
+            "node": "Add to Details sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add to Summary sheet": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add to Details sheet": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Dashboard mail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read sheet after edit": {
+      "main": [
+        [
+          {
+            "node": "JSON TO CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JSON TO CSV": {
+      "main": [
+        [
+          {
+            "node": "Saving to AWS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dashboard mail": {
+      "main": [
+        [
+          {
+            "node": "Notifying the professor2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a progress message": {
+      "main": [
+        [
+          {
+            "node": "Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tracker AI": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Progress Tracker AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge inputs": {
+      "main": [
+        [
+          {
+            "node": "Core AI - Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "YOUR_GOOGLE_SHEET_ID",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "7c98a1bfd1a84b2857e4b5724736ed8baaadd3eaf5d80e7c7f13a5f535302edd"
+  },
+  "id": "UsnZnXNagtBlAXwe",
+  "tags": []
+}
